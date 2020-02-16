@@ -64,35 +64,28 @@ cd Python-3.8.1
 sudo ./configure --enable-optimizations
 sudo make altinstall
 
-echo 'Setting up virtualenv and virtualenvwrapper...'
-pip install --upgrade pip
-pip install --upgrade virtualenvwrapper
-
-VIRTUALENV_SETUP='
-# virtualenvwrapper setup
-export WORKON_HOME=~/Envs
-mkdir -p $WORKON_HOME
-source ~/.local/bin/virtualenvwrapper.sh
-export PATH=~/.local/bin:${PATH}'
-
-eval "$VIRTUALENV_SETUP"
-cat <<< $VIRTUALENV_SETUP >> ~/.bashrc
+echo 'Setting up virtualenv...'
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y virtualenv
+export ENVS=~/.envs
+mkdir -p $ENVS
 
 echo 'Creating Python 2 utilities virtualenv...'
-mkvirtualenv -p $(which python) utils-py2
-workon utils-py2
+virtualenv -p $(which python) $ENVS/utils-py2
+source $ENVS/utils-py2/bin/activate
 pip install --upgrade \
   flake8   \
   pwntools \
   requests
+deactivate
 
 echo 'Creating Python 3 utilities virtualenv...'
-mkvirtualenv -p $(which python3.8) utils-py3
-workon utils-py3
+virtualenv -p $(which python3.8) $ENVS/utils-py3
+source $ENVS/utils-py3/bin/activate
 pip install --upgrade \
   flake8   \
   pwntools \
   requests
+deactivate
 
 echo 'Installing modern Java JDK/JRE...'
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -104,14 +97,16 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 ###########################################################################
 
 echo 'Making web-tools virtualenv...'
-mkvirtualenv -p $(which python3.8) web-tools
-workon web-tools
+virtualenv -p $(which python3.8) $ENVS/web-tools
+source $ENVS/web-tools/bin/activate
 
 echo 'Installing gobuster...'
 go get github.com/OJ/gobuster
 
 echo 'Installing wafw00f...'
 pip install --upgrade wafw00f
+
+deactivate
 
 ###########################################################################
 # Binary analysis tools.                                                  #
@@ -167,8 +162,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y volatility
 ###########################################################################
 
 echo 'Making stego-tools virtualenv...'
-mkvirtualenv -p $(which python3.8) stego-tools
-workon stego-tools
+virtualenv -p $(which python3.8) $ENVS/stego-tools
+source $ENVS/stego-tools/bin/activate
 
 echo 'Installing oletools...'
 pip install --upgrade oletools
@@ -178,3 +173,5 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pngcheck
 
 echo 'Installing zsteg...'
 sudo gem install zsteg
+
+deactivate
