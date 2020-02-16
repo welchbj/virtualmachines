@@ -1,36 +1,70 @@
 #!/usr/bin/env bash
 
-set -ex
+set -eux -o pipefail
 
-if [[ $(id -u) -ne 0 ]]; then
-  echo 'This script is only designed to be run as root'
-  exit 1
-fi
+###########################################################################
+# Dev tools.                                                              #
+###########################################################################
 
-# apt requirements
-apt-get update
-apt-get install -y  \
-  build-essential   \
-  gdb               \
-  git               \
-  libssl-dev        \
-  libffi-dev        \
-  python2.7         \
-  python-pip        \
-  python3-pip       \
-  python-dev        \
-  tmux              \
+echo 'Installing development packages...'
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  build-essential \
+  checkinstall    \
+  docker.io       \
+  gdb             \
+  git             \
+  libssl-dev      \
+  python2.7       \
+  python-pip      \
+  python3-pip
+
+echo 'Installing terminal utilities...'
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  tmux  \
   xclip
 
-mkdir /opt || true
+###########################################################################
+# Language runtimes.                                                      #
+###########################################################################
 
-# fetch dotfiles
-if [[ ! -d /opt/dotfiles ]]; then
-  git clone https://github.com/welchbj/dotfiles /opt/dotfiles
-  pushd /opt/dotfiles && ./init.sh && popd
-fi
+echo 'Installing golang...'
+# See: https://stackoverflow.com/a/41323785
+new_golang_ver=$(curl https://golang.org/VERSION?m=text 2> /dev/null)
+cd /tmp
+wget https://dl.google.com/go/${new_golang_ver}.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf  ${new_golang_ver}.linux-amd64.tar.gz
+echo ''                                      >> ~/.bashrc
+echo '# golang setup'                        >> ~/.bashrc
+echo 'export PATH=/usr/local/go/bin:${PATH}' >> ~/.bashrc
+echo 'export GOPATH=${HOME}/gopath'          >> ~/.bashrc
+echo 'export PATH=${GOPATH}/bin:${PATH}'     >> ~/.bashrc
+source ~/.bashrc
 
-# setup virtual environments
+echo 'Installing Rust...'
+curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+echo 'Installing latest Python from source...'
+# See: https://tecadmin.net/install-python-3-8-ubuntu/
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  libbz2-dev            \
+  libc6-dev             \
+  libffi-dev            \
+  libgdbm-dev           \
+  libncursesw5-dev      \
+  libreadline-gplv2-dev \
+  libsqlite3-dev        \
+  libssl-dev            \
+  tk-dev                \
+  zlib1g-dev
+cd /opt
+sudo wget https://www.python.org/ftp/python/3.8.1/Python-3.8.1.tgz
+sudo tar xzf Python-3.8.1.tgz
+sudo rm -f Python-3.8.1.tgz
+cd Python-3.8.1
+sudo ./configure --enable-optimizations
+sudo make altinstall
+
+echo 'Setting up virtualenv and virtualenvwrapper...'
 pip install --upgrade pip
 pip install --upgrade virtualenvwrapper
 
@@ -38,86 +72,109 @@ VIRTUALENV_SETUP='
 # virtualenvwrapper setup
 export WORKON_HOME=~/Envs
 mkdir -p $WORKON_HOME
-source /usr/local/bin/virtualenvwrapper.sh'
+source ~/.local/bin/virtualenvwrapper.sh
+export PATH=~/.local/bin:${PATH}'
 
 eval "$VIRTUALENV_SETUP"
 cat <<< $VIRTUALENV_SETUP >> ~/.bashrc
 
-mkvirtualenv -p $(which python) utils2 || true
-mkvirtualenv -p $(which python3) utils3 || true
-
-# install Python 2 utility libraries
-workon utils2
+echo 'Creating Python 2 utilities virtualenv...'
+mkvirtualenv -p $(which python) utils-py2
+workon utils-py2
 pip install --upgrade \
-  flake8    \
-  pwntools  \
+  flake8   \
+  pwntools \
   requests
 
-# install Python 3 utility libraries
-workon utils3
+echo 'Creating Python 3 utilities virtualenv...'
+mkvirtualenv -p $(which python3.8) utils-py3
+workon utils-py3
 pip install --upgrade \
-  flake8    \
-  mypy      \
-  pwntools  \
+  flake8   \
+  pwntools \
   requests
 
-deactivate
+echo 'Installing modern Java JDK/JRE...'
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  openjdk-11-jdk \
+  openjdk-11-jre
 
-# install GEF
-if [[ ! -d /opt/gef ]]; then
-  mkdir /opt/gef
-  pushd /opt
-  git clone https://github.com/hugsy/gef
-  echo "source /opt/gef/gef.py" >> ~/.gdbinit
-  popd
-fi
+###########################################################################
+# Web security tools.                                                     #
+###########################################################################
 
-# install go
-if ! which go; then
-  pushd /tmp
-  wget -O go.tar.gz https://dl.google.com/go/go1.13.linux-amd64.tar.gz
-  tar -xvf go.tar.gz
-  sudo mv go/bin/go /usr/local/bin
-  sudo mv go/bin/gofmt /usr/local/bin
-  popd
+echo 'Making web-tools virtualenv...'
+mkvirtualenv -p $(which python3.8) web-tools
+workon web-tools
 
-  echo ''                              >> ~/.bashrc
-  echo '# add go to path'              >> ~/.bashrc
-  echo 'export GOROOT=/usr/local/go'   >> ~/.bashrc
-  echo 'export PATH=$GOROOT/bin:$PATH' >> ~/.bashrc
-fi
+echo 'Installing gobuster...'
+go get github.com/OJ/gobuster
 
-# install gobuster binaries
-if [[ ! -d /opt/gobuster ]]; then
-  GOBUSTER_TMP=$(mktemp -d)
-  pushd $GOBUSTER_TMP
-  wget -O gobuster.7z https://github.com/OJ/gobuster/releases/download/v3.0.1/gobuster-linux-amd64.7z
-  7z x gobuster.7z
-  pushd gobuster-linux-amd64
-  chmod +x gobuster
-  mkdir /opt/gobuster
-  mv gobuster /opt/gobuster/gobuster
-  popd
-  popd
-  rm -rf $GOBUSTER_TMP
+echo 'Installing wafw00f...'
+pip install --upgrade wafw00f
 
-  echo ''                                >> ~/.bashrc
-  echo '# add gobuster to path'          >> ~/.bashrc
-  echo 'export PATH=/opt/gobuster:$PATH' >> ~/.bashrc
-fi
+###########################################################################
+# Binary analysis tools.                                                  #
+###########################################################################
 
-# install pspy binaries
-if [[ ! -d /opt/pspy ]]; then
-  mkdir /opt/pspy
-  pushd /opt/pspy
-  wget https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy32
-  wget https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy64
-  wget https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy32s
-  wget https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy64s
-  chmod +x /opt/pspy/pspy*
-  popd
+echo 'Installing GEF...'
+wget -q -O- https://github.com/hugsy/gef/raw/master/scripts/gef.sh | sh
 
-  echo ''                            >> ~/.bashrc
-  echo '# add pspy to PATH'          >> ~/.bashrc
-  echo 'export PATH=/opt/pspy:$PATH' >> ~/.bashrc
-fi
+echo 'Installing seccomp-tools...'
+sudo gem install seccomp-tools
+
+###########################################################################
+# Wordlists.                                                              #
+###########################################################################
+
+echo 'Installing fuzzdb...'
+cd /opt
+sudo git clone https://github.com/fuzzdb-project/fuzzdb
+sudo chown -R user /opt/fuzzdb
+
+echo 'Installing SecLists...'
+cd /opt
+sudo git clone https://github.com/danielmiessler/SecLists
+sudo chown -R user /opt/SecLists
+
+###########################################################################
+# Linux enumeration tools.                                                #
+###########################################################################
+
+echo 'Installing LinEnum...'
+cd /opt
+sudo git clone https://github.com/rebootuser/LinEnum
+sudo chown -R user /opt/LinEnum
+
+echo 'Installing pspy...'
+sudo mkdir /opt/pspy
+sudo wget -O /opt/pspy/pspy32 https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy32
+sudo wget -O /opt/pspy/pspy64 https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy64
+sudo wget -O /opt/pspy/pspy32s https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy32s
+sudo wget -O /opt/pspy/pspy64s https://github.com/DominicBreuker/pspy/releases/download/v1.2.0/pspy64s
+sudo chmod +x /opt/pspy/pspy*
+sudo chown -R user /opt/pspy
+
+###########################################################################
+# Forensics tools.                                                        #
+###########################################################################
+
+echo 'Installing volatility...'
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y volatility
+
+###########################################################################
+# Stego tools.                                                            #
+###########################################################################
+
+echo 'Making stego-tools virtualenv...'
+mkvirtualenv -p $(which python3.8) stego-tools
+workon stego-tools
+
+echo 'Installing oletools...'
+pip install --upgrade oletools
+
+echo 'Installing pngcheck...'
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y pngcheck
+
+echo 'Installing zsteg...'
+sudo gem install zsteg

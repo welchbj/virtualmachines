@@ -14,5 +14,19 @@ Vagrant.configure("2") do |config|
     vb.cpus = 2
     vb.customize ["modifyvm", :id, "--graphicscontroller", "vmsvga"]
     vb.customize ["modifyvm", :id, "--cableconnected1", "on"]
+	  vb.customize ["modifyvm", :id,  "--natdnshostresolver1", "on"]
   end
+  config.vm.provision "shell", inline: <<-SHELL
+    echo 'Creating unprivileged user...'
+    sudo useradd --create-home --shell /bin/bash user
+    sudo usermod -a -G sudo user
+    echo 'user:user' | sudo chpasswd
+    echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/dont-prompt-user-for-password
+
+    echo 'Updating apt packages...'
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update
+
+    echo 'Ensuring /opt directory exists...'
+    sudo mkdir -p /opt
+  SHELL
 end

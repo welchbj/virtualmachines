@@ -1,1 +1,0 @@
-A collection of simple vagrant templates
